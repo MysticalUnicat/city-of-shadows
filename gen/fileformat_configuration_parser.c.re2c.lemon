@@ -1,0 +1,97 @@
+ %include{
+#include "../src/log.h"
+#include "../src/format.h"
+#include "../src/configuration.h"
+
+/*!rules:re2c:tokens
+ 
+  whitespace = [ \t]*;
+  comment = ";" [^\n]*;
+  newline = whitespace? ( ( [\r\n] | comment ) whitespace? )*;
+
+  identifier = [a-zA-Z_][a-zA-Z_0-9]*;
+
+  number_oct = "0" [0-7]*;
+  number_dec = [1-9][0-9]*;
+  number_hex = "0x" [0-9a-fA-F]+;
+  number_frc = [0-9]* "." [0-9]+ | [0-9]+ ".";
+  number_exp = "e" [+-]? [0-9]+;
+  number_flt = (number_frc? | [0-9]+ number_exp);
+
+  number = "-"? (number_oct | number_dec | number_hex | number_flt);
+
+  character = [^\n\\]
+            | "\\a"
+            | "\\b"
+            | "\\f"
+            | "\\n"
+            | "\\r"
+            | "\\t"
+            | "\\v"
+            | "\\\\"
+            | "\\'"
+            | "\\\"" 
+            | "\\" [0-7]{1,3}
+            | "\\u" [0-9a-fA-F]{4}
+            | "\\U" [0-9a-fA-F]{8}
+            | "\\x" [0-9a-fA-F]+
+            ;
+  string = '"' character* '"';
+
+  path = identifier ("/" identifier)+ | "." ("/" identifier)*;
+
+  "["        { return LEFT_SQUARE_BRACKET; }
+  "]"        { return RIGHT_SQUARE_BRACKET; }
+  "="        { return EQUAL_SIGN; }
+  "."        { return PERIOD; }
+  whitespace { return WHITESPACE; }
+  newline    { return NEWLINE; }
+  identifier { return IDENTIFIER; }
+  number     { return NUMBER; }
+  string     { return STRING; }
+  path       { return PATH; }
+
+*/
+
+#define SOURCE_NAMESPACE fileformat.configuration.parser
+
+#define PARSER_EXTRA_STATE \
+	MStr section;
+
+#define PARSER_EXTRA_DESTRUCTOR \
+	if(extra->section != NULL) string_free(extra->section);
+}
+
+%name FileFormat_Configuration_Parser
+
+file ::= sections.
+
+ws ::= WHITESPACE.
+ws ::=           .
+
+%type full_identifier MStr
+%destructor full_identifier { string_free($$); }
+full_identifier(A) ::= full_identifier(B) PERIOD IDENTIFIER(C). { A = format_alloc("%s.%s", B, C.string); }
+full_identifier(A) ::=                           IDENTIFIER(C). { A = string_clone(C.string); }
+
+sections ::= sections section.
+sections ::=          section.
+
+section ::= section_header entries.
+
+section_header ::= LEFT_SQUARE_BRACKET ws full_identifier(B) ws RIGHT_SQUARE_BRACKET NEWLINE. { if(extra->section != NULL) string_free(extra->section); extra->section = string_clone(B); }
+
+entries ::= entries entry.
+entries ::=         entry.
+
+entry ::= IDENTIFIER(A) ws EQUAL_SIGN ws value(B) NEWLINE. { MStr name = format_alloc("%s.%s", extra->section, A.string); configuration_set(name, B); string_free(name); }
+entry ::= IDENTIFIER(A) ws EQUAL_SIGN NEWLINE. { MStr name = format_alloc("%s.%s", extra->section, A.string); configuration_set(name, ""); string_free(name); }
+
+%type value MStr
+%destructor value { string_free($$); }
+value(A) ::= IDENTIFIER(B). { A = string_clone(B.string); }
+value(A) ::= NUMBER(C).     { A = string_clone(C.string); }
+value(A) ::= STRING(D).     { A = string_clone_length((const char *)D.string + 1, string_size(D.string) - 2); }
+value(A) ::= PERIOD(E).     { A = string_clone(E.string); }
+value(A) ::= PATH(E).       { A = string_clone(E.string); }
+
