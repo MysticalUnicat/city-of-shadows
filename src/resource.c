@@ -8,134 +8,83 @@
 
 #define SOURCE_NAMESPACE core.resource
 
-struct pack_File {
-  MStr path;
-  uint32_t offset;
-  uint32_t length;
-  uint32_t source_file;
-};
+static InlineList _resource_list_free = INLINE_LIST_INIT(_resource_list_free);
+static InlineList _resource_list_inactive = INLINE_LIST_INIT(_resource_list_inactive);
+static InlineList _resource_list_active = INLINE_LIST_INIT(_resource_list_active);
+static Vector(struct LoadedResource *) _resource_list = VECTOR_INIT;
+static uint32_t _resource_id = 1, _resource_gen = 1;
 
-static Vector(struct platform_File *) _source_files;
-static Vector(struct pack_File) _files;
-static uint32_t * _files_sorted_by_path;
+void LoadedResource_free(struct LoadedResource * resource) {
+  switch(resource->type) {
+  case ResourceType_image:
+    GraphicsImage_unload(&resource->image);
+    break;
+  default:
+    break;
+  }
 
-struct _load_key {
-  CStr base;
-  uint32_t length;
-};
-
-int _load_key_comp(const void * _a, const void * _b, void * ud) {
-  struct _load_key * key = (struct _load_key *)_a;
-  uint32_t index = *(uint32_t *)_b;
-  return string_compare_length(key->base, _files.data[index].path, key->length);
+  InlineList_remove_self(&resource->list);
+  InlineList_push(&_resource_list_free, &resource->list);
+  _resource_list.data[resource->id - 1] = NULL;
 }
 
-int _sort_files_comp(const void * _a, const void * _b, void * ud) {
-  uint32_t index_a = *(uint32_t *)_a;
-  uint32_t index_b = *(uint32_t *)_b;
-  return string_compare(_files.data[index_a].path, _files.data[index_b].path);
+void LoadedResource_gc(void) {
+  struct LoadedResource * resource, * next_resource;
+  INLINE_LIST_EACH_CONTAINER_SAFE(&_resource_list_inactive, resource, next_resource, list) {
+    LoadedResource_free(resource);
+  }
+  InlineList_push_list(&_resource_list_inactive, &_resource_list_active);
+  _resource_gen++;
 }
 
-struct MPCK_Header {
-  char prefix[4];
-  uint32_t version;
-  uint32_t flags;
-  uint32_t num_pack_files;
-};
 
-bool resource_load_pack(CStr path, bool overwrite) {
-  struct platform_File * source_file = memory_alloc(platform_File_size(), 4);
-  if(!platform_File_open_synchronous(source_file, path, platform_File_READ)) {
-    goto on_error;
+static struct LoadedResource * _resource_allocate(enum ResourceType type) {
+  struct LoadedResource * resource;
+  if(InlineList_is_empty(&_resource_list_free)) {
+    resource = memory_alloc(sizeof(*resource), alignof(*resource));
+    InlineList_init(&resource->list);
+    resource->id = _resource_id++;
+
+    Vector_space_for(&_resource_list, 1);
+    *Vector_push(&_resource_list) = NULL;
+  } else {
+    resource = INLINE_LIST_CONTAINER(InlineList_pop(&_resource_list_free), struct LoadedResource, list);
   }
-  uint64_t num_read;
-  struct MPCK_Header header;
-  if(!platform_File_read_synchronous(source_file, -1, &header, sizeof(header), &num_read)) {
-    goto on_error_close;
-  }
-  if(header.prefix[0] != 'M' && header.prefix[1] != 'P' && header.prefix[2] != 'C' && header.prefix[3] != 'K') {
-    ERROR(SOURCE_NAMESPACE, "invalid pack header");
-    goto on_error_close;
-  }
-  endian_little(&header.version);
-  endian_little(&header.flags);
-  endian_little(&header.num_pack_files);
-  // array(uint32_t, 2, num_pack_files)
-  uint32_t * file_entries = memory_alloc(sizeof(*file_entries) * header.num_pack_files * 2, alignof(*file_entries));
-  if(!platform_File_read_synchronous(source_file, -1, file_entries, sizeof(*file_entries) * header.num_pack_files * 2, &num_read)) {
-    goto on_error_close;
-  }
-  // atop(fold(max), select(0))
-  uint32_t max_path_size = 0;
-  for(uint32_t i = 0; i < header.num_pack_files; i++) {
-    max_path_size = file_entries[i * 2 + 0] > max_path_size ? file_entries[i * 2 + 0] : max_path_size;
-  }
-  // fold(add)
-  uint64_t paths_size = 0;
-  uint64_t files_size = 0;
-  for(uint32_t i = 0; i < header.num_pack_files; i++) {
-    paths_size += file_entries[i * 2 + 0];
-    files_size += file_entries[i * 2 + 1];
-  }
-  struct _load_key key;
-  key.base = string_allocate(paths_size);
-  if(!platform_File_read_synchronous(source_file, -1, (void *)key.base, paths_size, &num_read)) {
-    goto on_error_paths;
-  }
-  uint64_t file_offset = 0;
-  Vector_space_for(&_source_files, 1);
-  *Vector_push(&_source_files) = source_file;
-  uint32_t old_files_length = _files.length;
-  for(uint32_t i = 0; i < header.num_pack_files; i++) {
-    uint32_t path_length = file_entries[i * 2 + 0];
-    uint32_t file_length = file_entries[i * 2 + 1];
-    key.length = path_length;
-    uint32_t * found_file_index;
-    found_file_index = (uint32_t *)sort_bsearch(&key, _files_sorted_by_path, _files.length, sizeof(*_files_sorted_by_path), _load_key_comp, NULL);
-    if(found_file_index == NULL) {
-      Vector_space_for(&_files, 1);
-      *Vector_push(&_files) = (struct pack_File) {
-        .path = format_alloc("%.*s", key.length, key.base),
-        .offset = file_offset,
-        .length = file_length,
-        .source_file = _source_files.length - 1
-      };
-    } else if(overwrite) {
-      struct pack_File * pack_file = &_files.data[*found_file_index];
-      pack_file->offset = file_offset;
-      pack_file->length = file_length;
-      pack_file->source_file = _source_files.length - 1;
-    }
-    key.base += key.length;
-    file_offset += file_length;
-  }
-  if(old_files_length != _files.length) {
-    _files_sorted_by_path = memory_realloc(_files_sorted_by_path, sizeof(*_files_sorted_by_path) * old_files_length, sizeof(*_files_sorted_by_path) * _files.length, alignof(*_files_sorted_by_path));
-    for(uint32_t i = old_files_length; i < _files.length; i++) {
-      _files_sorted_by_path[i] = i;
-    }
-    sort_qsort(_files_sorted_by_path, _files.length, sizeof(*_files_sorted_by_path), _sort_files_comp, NULL);
-  }
-  string_free((MStr)key.base);
-  return true;
-on_error_paths:
-  string_free((MStr)key.base);
-on_error_close:
-  platform_File_close_synchronous(source_file);
-on_error:
-  memory_free(source_file, platform_File_size(), 4);
-  return false;
+  InlineList_push(&_resource_list_active, &resource->list);
+  resource->type = type;
+  resource->gen = _resource_gen;
+  _resource_list.data[resource->id - 1] = resource;
+  return resource;
 }
 
-struct Reader * read_from_resource(struct platform_File * source_file, uint64_t start, uint64_t length);
-
-struct Reader * resource_read(CStr path) {
-  struct _load_key key = {.base = path, .length = string_size(path)};
-  uint32_t * found_file_index = (uint32_t *)sort_bsearch(&key, _files_sorted_by_path, _files.length, sizeof(*_files_sorted_by_path), _load_key_comp, NULL);
-  if(found_file_index == NULL) {
-    return NULL;
+void LoadedResource_touch(struct LoadedResource * resource) {
+  if(resource->gen != _resource_gen) {
+    InlineList_remove_self(&resource->list);
+    InlineList_push(&_resource_list_active, &resource->list);
+    resource->gen = _resource_gen;
   }
-  struct pack_File * pack_file = &_files.data[*found_file_index];
-  return read_from_resource(_source_files.data[pack_file->source_file], pack_file->offset, pack_file->length);
 }
+
+struct LoadedResource * LoadedResource_from_image(struct Image *img) {
+  struct LoadedResource * resource;
+
+  if(img->resource == NULL || img->resource_id != img->resource->id) {
+    char path[1024];
+    format_string(path, sizeof(path), "assets/%s", img->path);
+
+    resource = _resource_allocate(ResourceType_image);
+    GraphicsImage_load(&resource->image, path); 
+    img->resource = resource;
+    img->resource_id = resource->id;
+  } else {
+    LoadedResource_touch(img->resource);
+  }
+
+  return img->resource;
+}
+
+struct LoadedResource * LoadedResource_from_id(uint32_t id) {
+  return _resource_list.data[id - 1];
+}
+
 

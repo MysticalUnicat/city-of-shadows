@@ -34,6 +34,14 @@ static inline int format_count_v(const char *format, va_list ap) {
   return format_v(format_emit_to_nothing, NULL, (unsigned int)-1, format, ap);
 }
 
+static inline int format_count(const char *format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  int count = format_count_v(format, ap);
+  va_end(ap);
+  return count;
+}
+
 static inline int format_string_limit_v(char * string, size_t string_size, unsigned int limit, const char *format, va_list ap) {
   struct format_emit_to_string_UserData user_data = {
     .string = string,
@@ -85,4 +93,5 @@ static inline MStr format_alloc(const char * format, ...) {
   va_end(ap);
   return result;
 }
+
 #endif

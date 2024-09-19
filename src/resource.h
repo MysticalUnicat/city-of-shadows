@@ -1,9 +1,26 @@
 #pragma once
 
 #include "string.h"
+#include "image.h"
+#include "font.h"
+#include "inline_list.h"
 
-bool resource_load_pack(CStr path, bool overwrite);
+enum ResourceType { ResourceType_invalid, ResourceType_image, ResourceType_font };
 
-struct Reader;
+struct LoadedResource {
+  InlineList list;
 
-struct Reader * resource_read(CStr path);
+  enum ResourceType type;
+  uint32_t id, gen;
+
+  union {
+    struct GraphicsImage image;
+    struct Font font;
+  };
+};
+
+void LoadedResource_free(struct LoadedResource * resource);
+void LoadedResource_gc(void);
+void LoadedResource_touch(struct LoadedResource * resource);
+struct LoadedResource * LoadedResource_from_image(struct Image *img);
+struct LoadedResource * LoadedResource_from_id(uint32_t id);

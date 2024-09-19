@@ -5,6 +5,8 @@
 #include "platform.h"
 #include "display.h"
 
+#include "game_local.h"
+
 #include <stdlib.h>
 
 #define SOURCE_NAMESPACE core.main
@@ -34,6 +36,7 @@ int ecs_initialize(void);
 void ecs_shutdown(void);
 
 int main(int argc, char * argv []) {
+  
   uint32_t initialization_log_callback_index = log_add_callback(_initialization_log_callback);
 
   INFO(SOURCE_NAMESPACE, "initialization begin");

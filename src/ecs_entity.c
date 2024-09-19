@@ -122,7 +122,7 @@ ecs_Result ecs_spawn(const ecs_EntitySpawnInfo *spawn_info,
     uint32_t component_index = ecs_ComponentSet_order_of(
         &archetype->components, spawn_component.component);
 
-    ASSERT(component_index != UINT32_MAX);
+    ecs_ASSERT(component_index != UINT32_MAX);
 
     uint32_t component_size, component_offset;
     PagedSOA_decode_column(&archetype->paged_soa, component_index + 1,

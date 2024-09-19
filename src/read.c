@@ -31,7 +31,7 @@ struct Reader * read_from_file(const char * path) {
   return result;
 }
 
-struct Reader * read_from_resource(struct platform_File * source_file, uint64_t start, uint64_t length) {
+struct Reader * read_from_pack(struct platform_File * source_file, uint64_t start, uint64_t length) {
   struct Reader * result = memory_alloc(sizeof(*result), alignof(*result));
   result->resource.source_file = source_file;
   result->resource.start = start;

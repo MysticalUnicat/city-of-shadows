@@ -17,6 +17,7 @@ void platform_printf(const char * format, ...);
 void platform_run(void);
 
 void platform_schedule(void (*f)(void));
+void platform_schedule_interval(bool (*f)(void), uint64_t milliseconds);
 
 struct platform_File;
 size_t platform_File_size(void);

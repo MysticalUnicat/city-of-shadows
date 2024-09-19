@@ -6,6 +6,9 @@
 #include <stdint.h>
 
 #include "memory.h"
+#include "assert.h"
+#include "log.h"
+#include "cpp.h"
 
 typedef enum ecs_Result {
   ECS_SUCCESS = 0,                       ///< command successfully completed
@@ -134,8 +137,156 @@ typedef struct ecs_QueryCreateInfo {
 ecs_Result ecs_create_query(const ecs_QueryCreateInfo *create_info,
                             ecs_Query **query_ptr);
 
-ecs_Result ecs_execute_query(ecs_Query *query, ecs_QueryFunction cb);
+ecs_Result ecs_execute_query(ecs_Query *query, ecs_QueryFunction cb, void *ud);
 
 void ecs_destroy_query(ecs_Query *query);
+
+// --------------------------------------------------------------------------------------------------------------------
+#define ECS(F, ...) assert(ECS_SUCCESS == ecs_##F(__VA_ARGS__))
+
+#define ECS_LAZY_GLOBAL(TYPE, IDENT, ...) \
+  TYPE IDENT(void) { \
+    static TYPE inner; \
+    static int init = 0; \
+    if(init == 0) { \
+      TRACE(ecs, "making " #IDENT " ..."); \
+      __VA_ARGS__ \
+      init = 1; \
+    } \
+    return inner; \
+  }
+
+#define ECS_LAZY_GLOBAL_PTR(TYPE, IDENT, ...) \
+  TYPE *IDENT(void) { \
+    static TYPE inner; \
+    static TYPE *__ptr = NULL; \
+    if(__ptr == NULL) { \
+      TRACE(ecs, "making " #IDENT " ..."); \
+      __VA_ARGS__ \
+      __ptr = &inner; \
+    } \
+    return __ptr; \
+  }
+
+#define ECS_DECLARE_COMPONENT(IDENT, ...) \
+  struct IDENT __VA_ARGS__; \
+  ecs_ComponentHandle IDENT##_component(void); \
+  const struct IDENT *IDENT##_read(ecs_EntityHandle entity); \
+  struct IDENT *IDENT##_write(ecs_EntityHandle entity);
+
+
+#define CPP_EQ__ECS_COMPONENTrequires_requires(...) CPP_PROBE
+
+#define ECS_COMPONENT_is_requires(X) CPP_EQ(ECS_COMPONENT, requires, X)
+
+#define ECS_COMPONENT_emit(X) CPP_CAT(ECS_COMPONENT_emit_, X)
+#define ECS_COMPONENT_emit_requires(NAME) NAME##_component(), 
+
+#define ECS_COMPONENT_impl(IDENT, ...) \
+  ECS_LAZY_GLOBAL(ecs_ComponentHandle, IDENT##_component, \
+    ecs_ComponentHandle required_components[] = {CPP_FILTER_MAP(ECS_COMPONENT_is_requires, ECS_COMPONENT_emit, __VA_ARGS__)}; \
+    ecs_ComponentCreateInfo create_info; \
+		create_info.size = sizeof(struct IDENT); \
+		create_info.num_required_components = (sizeof(required_components) / sizeof(ecs_ComponentHandle)); \
+		create_info.required_components = required_components; \
+    ECS(register_component, &create_info, &inner); \
+  ) \
+  const struct IDENT *IDENT##_read(ecs_EntityHandle entity) { \
+    const struct IDENT *ptr; \
+    ecs_read_entity_component(entity, IDENT##_component(), (const void **)&ptr); \
+    return ptr; \
+  } \
+  struct IDENT *IDENT##_write(ecs_EntityHandle entity) { \
+    struct IDENT *ptr; \
+    ecs_write_entity_component(entity, IDENT##_component(), (void **)&ptr); \
+    return ptr; \
+  }
+#define ECS_COMPONENT(IDENT, ...) CPP_EVAL(ECS_COMPONENT_impl(IDENT, ## __VA_ARGS__))
+
+#define CPP_EQ__ECS_QUERYstate_state(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYargument_argument(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYpre_pre(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYread_read(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYwrite_write(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYoptional_optional(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYexclude_exclude(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYmodified_modified(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYaction_action(...) CPP_PROBE
+#define CPP_EQ__ECS_QUERYpost_post(...) CPP_PROBE
+
+#define ECS_QUERY_is_state(X) CPP_EQ(ECS_QUERY, state, X)
+#define ECS_QUERY_is_argument(X) CPP_EQ(ECS_QUERY, argument, X)
+#define ECS_QUERY_is_pre(X) CPP_EQ(ECS_QUERY, pre, X)
+#define ECS_QUERY_is_read(X) CPP_EQ(ECS_QUERY, read, X)
+#define ECS_QUERY_is_write(X) CPP_EQ(ECS_QUERY, write, X)
+#define ECS_QUERY_is_filter(X) \
+  CPP_OR(CPP_OR(CPP_EQ(ECS_QUERY, optional, X), CPP_EQ(ECS_QUERY, exclude, X)), \
+               CPP_EQ(ECS_QUERY, modified, X))
+#define ECS_QUERY_is_action(X) CPP_EQ(ECS_QUERY, action, X)
+#define ECS_QUERY_is_post(X) CPP_EQ(ECS_QUERY, post, X)
+
+#define ECS_QUERY_emit(X) CPP_CAT(ECS_QUERY_emit_, X)
+#define ECS_QUERY_emit_state(TYPE, NAME, ...) TYPE NAME;
+#define ECS_QUERY_emit_argument(TYPE, NAME, ...) TYPE NAME;
+#define ECS_QUERY_emit_write(TYPE, NAME) struct TYPE *NAME = (struct TYPE *)data[__i++];
+#define ECS_QUERY_emit_read(TYPE, NAME) const struct TYPE *NAME = (const struct TYPE *)data[__i++];
+#define ECS_QUERY_emit_pre(...) __VA_ARGS__
+#define ECS_QUERY_emit_action(...) __VA_ARGS__
+#define ECS_QUERY_emit_post(...) __VA_ARGS__
+
+#define ECS_QUERY_emit_create(X) CPP_CAT(ECS_QUERY_emit_create_, X)
+#define ECS_QUERY_emit_create_read(TYPE, NAME) TYPE##_component(),
+#define ECS_QUERY_emit_create_write(TYPE, NAME) TYPE##_component(),
+#define ECS_QUERY_emit_create_optional(TYPE) {.component = TYPE##_component(), .filter = ECS_FILTER_OPTIONAL},
+#define ECS_QUERY_emit_create_exclude(TYPE) {.component = TYPE##_component(), .filter = ECS_FILTER_EXCLUDE},
+#define ECS_QUERY_emit_create_modified(TYPE) {.component = TYPE##_component(), .filter = ECS_FILTER_MODIFIED},
+
+#define ECS_QUERY_emit_arg1(X) CPP_CAT(ECS_QUERY_emit_arg1_, X)
+#define ECS_QUERY_emit_arg1_argument(TYPE, NAME) TYPE NAME,
+
+#define ECS_QUERY_emit_arg2(X) CPP_CAT(ECS_QUERY_emit_arg2_, X)
+#define ECS_QUERY_emit_arg2_argument(TYPE, NAME) state->NAME = NAME;
+
+#define ECS_QUERY(NAME, ...) CPP_EVAL(ECS_QUERY_impl(NAME, __VA_ARGS__))
+#define ECS_QUERY_impl(NAME, ...) \
+  struct CPP_CAT(NAME, _state) { \
+    ecs_Query *query; \
+    CPP_FILTER_MAP(ECS_QUERY_is_state, ECS_QUERY_emit, __VA_ARGS__) \
+    CPP_FILTER_MAP(ECS_QUERY_is_argument, ECS_QUERY_emit, __VA_ARGS__) \
+  }; \
+  static void CPP_CAT(NAME, _do)(void *ud, ecs_EntityHandle entity, \
+                                       void **data) { \
+    uint32_t __i = 0; \
+    struct CPP_CAT(NAME, _state) *state = (struct CPP_CAT(NAME, _state) *)ud; \
+    CPP_FILTER_MAP(ECS_QUERY_is_write, ECS_QUERY_emit, __VA_ARGS__) \
+    CPP_FILTER_MAP(ECS_QUERY_is_read, ECS_QUERY_emit, __VA_ARGS__) \
+    CPP_FILTER_MAP(ECS_QUERY_is_action, ECS_QUERY_emit, __VA_ARGS__) \
+  } \
+  void NAME( \
+    CPP_FILTER_MAP(ECS_QUERY_is_argument, ECS_QUERY_emit_arg1, __VA_ARGS__) ... \
+  ) { \
+    static struct CPP_CAT(NAME, _state) _state = {0}; \
+    static struct CPP_CAT(NAME, _state) *state = &_state; \
+    CPP_FILTER_MAP(ECS_QUERY_is_argument, ECS_QUERY_emit_arg2, __VA_ARGS__) \
+    if(state->query == NULL) { \
+      ecs_ComponentHandle _rlist[] = { \
+          CPP_FILTER_MAP(ECS_QUERY_is_read, ECS_QUERY_emit_create, __VA_ARGS__)}; \
+      ecs_ComponentHandle _wlist[] = { \
+          CPP_FILTER_MAP(ECS_QUERY_is_write, ECS_QUERY_emit_create, __VA_ARGS__)}; \
+      ecs_QueryFilterCreateInfo _flist[] = { \
+          CPP_FILTER_MAP(ECS_QUERY_is_filter, ECS_QUERY_emit_create, __VA_ARGS__)}; \
+      ecs_create_query( \
+                             &(ecs_QueryCreateInfo){.num_write_components = sizeof(_wlist) / sizeof(_wlist[0]), \
+                                                          .write_components = _wlist, \
+                                                          .num_read_components = sizeof(_rlist) / sizeof(_rlist[0]), \
+                                                          .read_components = _rlist, \
+                                                          .num_filters = sizeof(_flist) / sizeof(_flist[0]), \
+                                                          .filters = _flist}, \
+                             &state->query); \
+    } \
+    CPP_FILTER_MAP(ECS_QUERY_is_pre, ECS_QUERY_emit, __VA_ARGS__) \
+    ecs_execute_query(state->query, CPP_CAT(NAME, _do), state); \
+    CPP_FILTER_MAP(ECS_QUERY_is_post, ECS_QUERY_emit, __VA_ARGS__) \
+  }
 
 #endif

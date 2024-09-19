@@ -139,7 +139,7 @@ void configuration_initialize(void) {
   bool execute_main_scene = false;
 
   if(string_size(main_pack) > 0) {
-    if(!resource_load_pack(main_pack, false)) {
+    if(!vfs_load_pack(main_pack, false)) {
       ERROR("failed to load main pack %s", main_pack);
     } else {
       pack_loaded = true;
@@ -148,7 +148,7 @@ void configuration_initialize(void) {
   }
 
   if(pack_loaded) {
-    vfs_set_default_namespace(VFS_Namespacee_RES);
+    vfs_set_default_namespace(VFS_Namespacee_PACK);
   }
 
   // vfs is setup now

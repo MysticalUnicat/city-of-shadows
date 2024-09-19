@@ -60,11 +60,25 @@ static void _schedule_cb(uv_timer_t * timer) {
   uv_close((uv_handle_t *)timer, _free_uv_timer);
 }
 
+static void _schedule_interval_cb(uv_timer_t * timer) {
+  bool (*f)(void) = (bool (*)(void))timer->data;
+  if(!f()) {
+    uv_close((uv_handle_t *)timer, _free_uv_timer);
+  }
+}
+
 void platform_schedule(void (*f)(void)) {
-  uv_timer_t * timer = memory_alloc(sizeof(uv_timer_t), alignof(uv_timer_t));
-  uv_timer_init(&_loop, timer);
+  uv_timer_t * timer = memory_new(uv_timer_t);
   timer->data = f;
+  uv_timer_init(&_loop, timer);
   uv_timer_start(timer, _schedule_cb, 0, 0);
+}
+
+void platform_schedule_interval(bool (*f)(void), uint64_t milliseconds) {
+  uv_timer_t * timer = memory_new(uv_timer_t);
+  timer->data = f;
+  uv_timer_init(&_loop, timer);
+  uv_timer_start(timer, _schedule_interval_cb, 0, milliseconds);
 }
 
 struct platform_File {

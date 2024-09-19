@@ -158,7 +158,7 @@ static inline void * ecs_write(
 // ============================================================================
 #define return_if_ERROR(C) do { ecs_Result __r = C; if(__r < ECS_SUCCESS) return __r; } while(0)
 #define return_ERROR_INVALID_ARGUMENT_if(X) do { if(X) { return ECS_ERROR_INVALID_ARGUMENT; } } while(0)
-#define ASSERT(X) do { if(!(X)) { return ECS_ERROR_INVALID_ARGUMENT; } } while(0)
+#define ecs_ASSERT(X) do { if(!(X)) { return ECS_ERROR_INVALID_ARGUMENT; } } while(0)
 
 // ============================================================================
 // memory.c
