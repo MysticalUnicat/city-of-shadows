@@ -1,0 +1,442 @@
+%token COMMENT.
+%token WHITESPACE.
+
+%include{
+#include "../src/log.h"
+#include "../src/format.h"
+#include "../src/configuration.h"
+
+#include "../src/script_local.h"
+
+/*!rules:re2c:tokens
+
+  comment = "#" [^\n]*;
+
+  whitespace = [ \t]*;
+  newline = whitespace? ( [\r\n] whitespace? )*;
+
+  name = [a-zA-Z_][a-zA-Z_0-9]*;
+
+  number_oct = "0" [0-7]*;
+  number_dec = [1-9][0-9]*;
+  number_hex = "0x" [0-9a-fA-F]+;
+  number_int = "-"? (number_oct | number_dec | number_hex);
+
+  number_frc = [0-9]* "." [0-9]+ | [0-9]+ ".";
+  number_exp = "e" [+-]? [0-9]+;
+  number_flt = "-"? (number_frc? | [0-9]+ number_exp);
+
+  escape = "\\a"
+         | "\\b"
+         | "\\f"
+         | "\\n"
+         | "\\r"
+         | "\\t"
+         | "\\v"
+         | "\\\\"
+         | "\\'"
+         | "\\\"" 
+         | "\\" [0-7]{1,3}
+         | "\\u" [0-9a-fA-F]{4}
+         | "\\U" [0-9a-fA-F]{8}
+         | "\\x" [0-9a-fA-F]+
+         ;
+
+  string = '"' ([^\n\\"] | escape)* '"';
+  character = "'" ([^\n\\'] | escape)* "'";
+
+  "["        { return LEFT_SQUARE_BRACKET; }
+  "("        { return LEFT_PARENTHESIS; }
+  "{"        { return LEFT_CURLY_BRACKET; }
+
+  "]"        { return RIGHT_SQUARE_BRACKET; }
+  ")"        { return RIGHT_PARENTHESIS; }
+  "}"        { return RIGHT_CURLY_BRACKET; }
+
+  "="        { return EQUAL_SIGN; }
+  "+"        { return PLUS_SIGN; }
+  "+="       { return PLUS_SIGN__EQUAL_SIGN; }
+  "-"        { return HYPHEN_MINUS; }
+  "-="       { return HYPHEN_MINUS__EQUAL_SIGN; }
+  "->"       { return HYPHEN_MINUS__GREATER_THAN_SIGN; }
+
+  "."        { return FULL_STOP; }
+
+  "_"        { return LOW_LINE; }
+
+  "fun"    { return KEYWORD_FUN; }
+  "struct"  { return KEYWORD_STRUCT; }
+  "enum"   { return KEYWORD_ENUM; }
+
+  "break"   { return KEYWORD_BREAK; }
+  "return"  { return KEYWORD_RETURN; }
+
+  "while"   { return KEYWORD_WHILE; }
+
+  "type"    { return KEYWORD_TYPE; }
+  "void"    { return KEYWORD_VOID; }
+  "bool"    { return KEYWORD_BOOL; }
+  "true"    { return KEYWORD_TRUE; }
+  "false"   { return KEYWORD_FALSE; }
+  "int"     { return KEYWORD_INT; }
+  "i8"    { return KEYWORD_I8; }
+  "i16"   { return KEYWORD_I16; }
+  "i32"   { return KEYWORD_I32; }
+  "i64"   { return KEYWORD_I64; }
+  "uint"    { return KEYWORD_UINT; }
+  "u8"   { return KEYWORD_U8; }
+  "u16"  { return KEYWORD_U16; }
+  "u32"  { return KEYWORD_U32; }
+  "u64"  { return KEYWORD_U64; }
+  "real"   { return KEYWORD_REAL; }
+  "f32" { return KEYWORD_F32; }
+  "f64" { return KEYWORD_F64; }
+  "char"    { return KEYWORD_CHAR; }
+
+  whitespace { return WHITESPACE; }
+  newline    { return NEWLINE; }
+  comment    { return COMMENT; }
+
+  name           { return NAME; }
+  number_int     { return UINT; }
+  "-" number_int { return INT; }
+  number_flt     { return REAL; }
+  string         { return STRING; }
+  character      { return CHARACTER; }
+
+*/
+
+#define SOURCE_NAMESPACE fileformat.configuration.parser
+
+#define PARSER_EXTRA_ARGUMENT \
+	, struct Script_AST_Allocator * allocator
+
+#define PARSER_EXTRA_STATE \
+	struct Script_AST_Allocator * allocator; \
+	struct Script_AST * document;
+
+#define PARSER_EXTRA_CONSTRUCTOR \
+  extra->allocator = allocator;
+
+#define PARSER_EXTRA_DESTRUCTOR \
+	return extra->document;
+
+#define AST_append(...)           Script_AST_append(extra->allocator, ## __VA_ARGS__)
+#define AST_prepend(...)          Script_AST_prepend(extra->allocator, ## __VA_ARGS__)
+#define AST_declaration(...)      Script_AST_mk_declaration(extra->allocator, ## __VA_ARGS__)
+#define AST_binding(...)          Script_AST_mk_binding(extra->allocator, ## __VA_ARGS__)
+#define AST_if(...)               Script_AST_mk_if(extra->allocator, ## __VA_ARGS__)
+#define AST_elif(...)             Script_AST_mk_elif(extra->allocator, ## __VA_ARGS__)
+#define AST_while(...)            Script_AST_mk_while(extra->allocator, ## __VA_ARGS__)
+#define AST_assign(...)           Script_AST_mk_assign(extra->allocator, ## __VA_ARGS__)
+#define AST_return(...)           Script_AST_mk_return(extra->allocator, ## __VA_ARGS__)
+#define AST_break(...)            Script_AST_mk_break(extra->allocator, ## __VA_ARGS__)
+#define AST_continue(...)         Script_AST_mk_continue(extra->allocator, ## __VA_ARGS__)
+#define AST_deref(...)            Script_AST_mk_unary(extra->allocator, Script_AST_OP_pointer_deref, ## __VA_ARGS__)
+#define AST_ref(...)              Script_AST_mk_unary(extra->allocator, Script_AST_OP_pointer_ref, ## __VA_ARGS__)
+#define AST_number_negate(...)    Script_AST_mk_unary(extra->allocator, Script_AST_OP_number_sub, ## __VA_ARGS__)
+#define AST_number_conjugate(...) Script_AST_mk_unary(extra->allocator, Script_AST_OP_number_add, ## __VA_ARGS__)
+#define AST_bit_negate(...)       Script_AST_mk_unary(extra->allocator, Script_AST_OP_binary_neg, ## __VA_ARGS__)
+#define AST_array_access(...)     Script_AST_mk_array_access(extra->allocator, ## __VA_ARGS__)
+#define AST_call(...)             Script_AST_mk_call(extra->allocator, ## __VA_ARGS__)
+#define AST_member_access(...)    Script_AST_mk_member_access(extra->allocator, ## __VA_ARGS__)
+#define AST_annotation(...)       Script_AST_mk_annotation(extra->allocator, ## __VA_ARGS__)
+#define AST_structure_type(...)   Script_AST_mk_structure_type(extra->allocator, ## __VA_ARGS__)
+#define AST_structure_value(...)  Script_AST_mk_structure_value(extra->allocator, ## __VA_ARGS__)
+#define AST_enum_type(...)        Script_AST_mk_enum_type(extra->allocator, ## __VA_ARGS__)
+#define AST_enum_value(...)       Script_AST_mk_enum_value(extra->allocator, ## __VA_ARGS__)
+#define AST_function_type(...)    Script_AST_mk_function_type(extra->allocator, ## __VA_ARGS__)
+#define AST_function_value(...)   Script_AST_mk_function_value(extra->allocator, ## __VA_ARGS__)
+#define AST_extract_names(...)    Script_AST_mk_extract_names(extra->allocator, ## __VA_ARGS__)
+#define AST_tuple_type(...)       Script_AST_mk_tuple_type(extra->allocator, ## __VA_ARGS__)
+#define AST_tuple_value(...)      Script_AST_mk_tuple_value(extra->allocator, ## __VA_ARGS__)
+#define AST_string(...)           Script_AST_mk_string(extra->allocator, ## __VA_ARGS__)
+#define AST_char_type(...)        Script_AST_mk_char_type(extra->allocator, ## __VA_ARGS__)
+#define AST_type(...)             Script_AST_mk_type(extra->allocator, ## __VA_ARGS__)
+#define AST_void(...)             Script_AST_mk_void(extra->allocator, ## __VA_ARGS__)
+#define AST_bool(...)             Script_AST_mk_bool(extra->allocator, ## __VA_ARGS__)
+#define AST_true(...)             Script_AST_mk_true(extra->allocator, ## __VA_ARGS__)
+#define AST_false(...)            Script_AST_mk_false(extra->allocator, ## __VA_ARGS__)
+#define AST_character(...)        Script_AST_mk_character(extra->allocator, ## __VA_ARGS__)
+#define AST_name(...)             Script_AST_mk_name(extra->allocator, ## __VA_ARGS__)
+#define AST_uint_type(...)        Script_AST_mk_uint_type(extra->allocator, ## __VA_ARGS__)
+#define AST_uint_value(...)       Script_AST_mk_uint_value(extra->allocator, ## __VA_ARGS__)
+#define AST_u8_type(...)          Script_AST_mk_u8_type(extra->allocator, ## __VA_ARGS__)
+#define AST_u8_value(...)         Script_AST_mk_u8_value(extra->allocator, ## __VA_ARGS__)
+#define AST_u16_type(...)         Script_AST_mk_u16_type(extra->allocator, ## __VA_ARGS__)
+#define AST_u16_value(...)        Script_AST_mk_u16_value(extra->allocator, ## __VA_ARGS__)
+#define AST_u32_type(...)         Script_AST_mk_u32_type(extra->allocator, ## __VA_ARGS__)
+#define AST_u32_value(...)        Script_AST_mk_u32_value(extra->allocator, ## __VA_ARGS__)
+#define AST_u64_type(...)         Script_AST_mk_u64_type(extra->allocator, ## __VA_ARGS__)
+#define AST_u64_value(...)        Script_AST_mk_u64_value(extra->allocator, ## __VA_ARGS__)
+#define AST_int_type(...)         Script_AST_mk_int_type(extra->allocator, ## __VA_ARGS__)
+#define AST_int_value(...)        Script_AST_mk_int_value(extra->allocator, ## __VA_ARGS__)
+#define AST_i8_type(...)          Script_AST_mk_i8_type(extra->allocator, ## __VA_ARGS__)
+#define AST_i8_value(...)         Script_AST_mk_i8_value(extra->allocator, ## __VA_ARGS__)
+#define AST_i16_type(...)         Script_AST_mk_i16_type(extra->allocator, ## __VA_ARGS__)
+#define AST_i16_value(...)        Script_AST_mk_i16_value(extra->allocator, ## __VA_ARGS__)
+#define AST_i32_type(...)         Script_AST_mk_i32_type(extra->allocator, ## __VA_ARGS__)
+#define AST_i32_value(...)        Script_AST_mk_i32_value(extra->allocator, ## __VA_ARGS__)
+#define AST_i64_type(...)         Script_AST_mk_i64_type(extra->allocator, ## __VA_ARGS__)
+#define AST_i64_value(...)        Script_AST_mk_i64_value(extra->allocator, ## __VA_ARGS__)
+#define AST_real_type(...)        Script_AST_mk_real_type(extra->allocator, ## __VA_ARGS__)
+#define AST_real_value(...)       Script_AST_mk_real_value(extra->allocator, ## __VA_ARGS__)
+#define AST_f32_type(...)         Script_AST_mk_f32_type(extra->allocator, ## __VA_ARGS__)
+#define AST_f32_value(...)        Script_AST_mk_f32_value(extra->allocator, ## __VA_ARGS__)
+#define AST_f64_type(...)         Script_AST_mk_f64_type(extra->allocator, ## __VA_ARGS__)
+#define AST_f64_value(...)        Script_AST_mk_f64_value(extra->allocator, ## __VA_ARGS__)
+
+}
+
+%name FileFormat_Script_Parser
+
+file ::= declaration_list(A). { extra->document = A; }
+
+right_arrow ::= HYPHEN_MINUS__GREATER_THAN_SIGN.
+
+%type declaration_list { struct Script_AST * }
+declaration_list(A) ::= declaration_list(B) declaration(C). { A = AST_append(B, C); }
+declaration_list(A) ::=                     declaration(C). { A = C; }
+
+%type declaration { struct Script_AST * }
+declaration ::= struct_declaration.
+declaration ::= enum_declaration.
+declaration ::= function_declaration.
+declaration ::= variable_declaration.
+
+%type struct_declaration { struct Script_AST * }
+struct_declaration(A) ::= KEYWORD_STRUCT NAME(B) COLON member_block(C). { A = AST_declaration(B.string, AST_type(), AST_structure_type(C)); }
+
+%type enum_declaration { struct Script_AST * }
+enum_declaration(A) ::= KEYWORD_ENUM NAME(B) COLON member_block(C). { A = AST_declaration(B.string, AST_type(), AST_enum_type(C)); }
+
+%type member_block { struct Script_AST * }
+member_block(A) ::= NEWLINE INDENT member_list(B) DEDENT. { A = B; }
+member_block(A) ::= simple_member_list(B) NEWLINE. { A = B; }
+
+%type member_list { struct Script_AST * }
+member_list(A) ::= member_list(B) member(C) NEWLINE. { A = AST_append(B, C); }
+member_list(A) ::=                member(C) NEWLINE. { A = C; }
+
+%type simple_member_list { struct Script_AST * }
+simple_member_list(A) ::= simple_member_list(B) SEMICOLON member(C). { A = AST_append(B, C); }
+simple_member_list(A) ::=                                 member(C). { A = C; }
+
+%type member { struct Script_AST * }
+member(A) ::= NAME(B) COLON expr(C). { A = AST_binding(B.string, C); }
+
+%type function_declaration { struct Script_AST * }
+function_declaration(A) ::= KEYWORD_FUN NAME(B) LEFT_PARENTHESIS function_declaration_argument_list(C) RIGHT_PARENTHESIS function_declaration_result(D) COLON block(E). {
+  struct Script_AST * type = AST_function_type(C, D);
+  struct Script_AST * value = AST_function_value(AST_extract_names(C), E);
+  A = AST_declaration(B.string, type, value);
+}
+
+%type function_declaration_argument_list { struct Script_AST * }
+function_declaration_argument_list(A) ::= function_declaration_argument_list(B) COMMA function_declaration_argument(C). { A = AST_append(B, C); }
+function_declaration_argument_list(A) ::=                                             function_declaration_argument(C). { A = C; }
+function_declaration_argument_list(A) ::=                                                                             . { A = NULL; }
+
+%type function_declaration_argument { struct Script_AST * }
+function_declaration_argument(A) ::= NAME(B) COLON expr(C). { A = AST_binding(B.string, C); }
+
+%type function_declaration_result { struct Script_AST * }
+function_declaration_result(A) ::= right_arrow expr(B). { A = B; }
+function_declaration_result(A) ::= . { A = NULL; } 
+
+%type variable_declaration { struct Script_AST * }
+variable_declaration(A) ::= NAME(B) COLON expr(C) EQUAL_SIGN expr(D) NEWLINE. { A = AST_declaration(B.string, C, D); }
+
+%type block { struct Script_AST * }
+block(A) ::= NEWLINE INDENT statement_list(B) DEDENT. { A = B; }
+block(A) ::= simple_statement_list(B) NEWLINE. { A = B; }
+
+%type statement_list { struct Script_AST * }
+statement_list(A) ::= statement_list(B) statement(C). { A = AST_append(B, C); } 
+statement_list(A) ::=                   statement(C). { A = C; }
+
+%type simple_statement_list { struct Script_AST * }
+simple_statement_list(A) ::= simple_statement_list(B) SEMICOLON simple_statement(C). { A = AST_append(B, C); } 
+simple_statement_list(A) ::=                                    simple_statement(C). { A = C; }
+
+%type statement { struct Script_AST * }
+statement(A) ::= compound_statement(B). { A = B; }
+statement(A) ::= simple_statement(B) NEWLINE. { A = B; }
+
+%type compound_statement { struct Script_AST * }
+compound_statement(A) ::= declaration(B). { A = B; }
+compound_statement(A) ::= if_statement(B). { A = B; }
+compound_statement(A) ::= while_statement(B). { A = B; }
+
+%type simple_statement { struct Script_AST * }
+simple_statement(A) ::= expr(C). { A = C; }
+simple_statement(A) ::= prefix(B) assign_op(C) expr(D). { A = AST_assign(B, C, D); }
+simple_statement(A) ::= KEYWORD_RETURN expr(C). { A = AST_return(C); }
+simple_statement(A) ::= KEYWORD_RETURN. { A = AST_return(NULL); }
+simple_statement(A) ::= KEYWORD_BREAK. { A = AST_break(); }
+simple_statement(A) ::= KEYWORD_CONTINUE. { A = AST_continue(); }
+
+%type assign_op { int }
+assign_op(A) ::= EQUAL_SIGN. { A = 0; }
+assign_op(A) ::= PLUS_SIGN__EQUAL_SIGN. { A = 1; }
+assign_op(A) ::= HYPHEN_MINUS__EQUAL_SIGN. { A = 2; }
+
+%type named_expr { struct { const char * name; struct Script_AST * value; struct Script_AST * expr; } }
+named_expr(A) ::= NAME(B) EQUAL_SIGN expr(C) SEMICOLON expr(D). { A.name = string_clone(B.string); A.value = C; A.expr = D; }
+named_expr(A) ::= expr(D). { A.name = NULL; A.value = NULL; A.expr = D; }
+
+/*
+ * if expr :
+ *    code
+ * elif expr :
+ *    code
+ * else :
+ *    code
+ */
+
+%type if_statement { struct Script_AST * }
+if_statement(A) ::= KEYWORD_IF named_expr(B) COLON block(C) elif_statement(D). { A = AST_if(B.name, B.value, B.expr, C, D); }
+if_statement(A) ::= KEYWORD_IF named_expr(B) COLON block(C) else_block(D). { A = AST_if(B.name, B.value, B.expr, C, D); }
+
+%type elif_statement { struct Script_AST * }
+elif_statement(A) ::= KEYWORD_ELIF named_expr(B) COLON block(C) elif_statement(D). { A = AST_elif(B.name, B.value, B.expr, C, D); }
+elif_statement(A) ::= KEYWORD_ELIF named_expr(B) COLON block(C) else_block(D). { A = AST_elif(B.name, B.value, B.expr, C, D); }
+
+%type else_block { struct Script_AST * }
+else_block(A) ::= KEYWORD_ELSE COLON block(B). { A = B; }
+else_block(A) ::= . { A = NULL; }
+
+%type while_statement { struct Script_AST * }
+while_statement(A) ::= KEYWORD_WHILE named_expr(B) COLON block(C) else_block(D). { A = AST_while(B.name, B.value, B.expr, C, D); }
+
+%type expr { struct Script_AST * }
+expr(A) ::= prefix(B). { A = B; }
+
+%type expr_list { struct Script_AST * }
+expr_list(A) ::= expr_list(B) COMMA expr(C). { A = AST_append(B, C); }
+expr_list(A) ::=                    expr(C). { A = C; }
+expr_list(A) ::= . { A = NULL; }
+
+%type prefix { struct Script_AST * }
+prefix(A) ::= postfix(B). { A = B; }
+prefix(A) ::= ASTERISK prefix(B). { A = AST_deref(B); }
+prefix(A) ::= AMPERSAND prefix(B). { A = AST_ref(B); }
+prefix(A) ::= HYPHEN_MINUS prefix(B). { A = AST_number_negate(B); }
+prefix(A) ::= PLUS_SIGN prefix(B). { A = AST_number_conjugate(B); }
+prefix(A) ::= TILDE prefix(B). { A = AST_bit_negate(B); }
+
+%type postfix { struct Script_AST * }
+postfix(A) ::= atom(B). { A = B; }
+postfix(A) ::= postfix(B) LEFT_SQUARE_BRACKET expr(C) RIGHT_SQUARE_BRACKET. { A = AST_array_access(B, C); }
+postfix(A) ::= postfix(B) LEFT_PARENTHESIS expr_list(C) RIGHT_PARENTHESIS. { A = AST_call(B, C); }
+postfix(A) ::= postfix(B) FULL_STOP NAME(C). { A = AST_member_access(B, C.string); }
+
+%type atom { struct Script_AST * }
+atom(A) ::= KEYWORD_TYPE. { A = AST_type(); }
+atom(A) ::= KEYWORD_VOID. { A = AST_void(); }
+atom(A) ::= KEYWORD_BOOL. { A = AST_bool(); }
+atom(A) ::= KEYWORD_TRUE. { A = AST_true(); }
+atom(A) ::= KEYWORD_FALSE. { A = AST_false(); }
+atom(A) ::= KEYWORD_UINT. { A = AST_uint_type(); }
+atom(A) ::= KEYWORD_CHAR. { A = AST_char_type(); }
+atom(A) ::= KEYWORD_U8. { A = AST_u8_type(); }
+atom(A) ::= KEYWORD_U16. { A = AST_u16_type(); }
+atom(A) ::= KEYWORD_U32. { A = AST_u32_type(); }
+atom(A) ::= KEYWORD_U64. { A = AST_u64_type(); }
+atom(A) ::= KEYWORD_INT. { A = AST_int_type(); }
+atom(A) ::= KEYWORD_I8. { A = AST_i8_type(); }
+atom(A) ::= KEYWORD_I16. { A = AST_i16_type(); }
+atom(A) ::= KEYWORD_I32. { A = AST_i32_type(); }
+atom(A) ::= KEYWORD_I64. { A = AST_i64_type(); }
+atom(A) ::= KEYWORD_REAL. { A = AST_real_type(); }
+atom(A) ::= KEYWORD_F32. { A = AST_f32_type(); }
+atom(A) ::= KEYWORD_F64. { A = AST_f64_type(); }
+atom(A) ::= tuple_type(B). { A = B; }
+atom(A) ::= structure_type(B). { A = B; }
+atom(A) ::= enum_type(B). { A = B; }
+atom(A) ::= function_type(B). { A = B; }
+atom(A) ::= NAME(B). { A = AST_name(B.string); }
+atom(A) ::= UINT(B). { A = AST_uint_value(B.string); }
+atom(A) ::= INT(B). { A = AST_int_value(B.string); }
+atom(A) ::= REAL(B). { A = AST_real_value(B.string); }
+atom(A) ::= CHARACTER(B). { A = AST_character(B.string); }
+atom(A) ::= U8(B). { A = AST_u8_value(B.string); }
+atom(A) ::= U16(B). { A = AST_u16_value(B.string); }
+atom(A) ::= U32(B). { A = AST_u32_value(B.string); }
+atom(A) ::= U64(B). { A = AST_u64_value(B.string); }
+atom(A) ::= I8(B). { A = AST_i8_value(B.string); }
+atom(A) ::= I16(B). { A = AST_i16_value(B.string); }
+atom(A) ::= I32(B). { A = AST_i32_value(B.string); }
+atom(A) ::= I64(B). { A = AST_i64_value(B.string); }
+atom(A) ::= F32(B). { A = AST_f32_value(B.string); }
+atom(A) ::= F64(B). { A = AST_f64_value(B.string); }
+atom(A) ::= STRING(B). { A = AST_string(B.string); }
+atom(A) ::= subexpr(B). { A = B; }
+atom(A) ::= annotation(B). { A = B; }
+atom(A) ::= tuple_value(B). { A = B; }
+atom(A) ::= structure_value(B). { A = B; }
+atom(A) ::= enum_value(B). { A = B; }
+atom(A) ::= function_value(B). { A = B; }
+
+%type tuple_type { struct Script_AST * }
+tuple_type(A) ::= LEFT_PARENTHESIS COLON expr_list(B) RIGHT_PARENTHESIS. { A = AST_tuple_type(B); }
+
+%type tuple_value { struct Script_AST * }
+tuple_value(A) ::= LEFT_PARENTHESIS expr(FIRST) COMMA expr_list(REST) RIGHT_PARENTHESIS. { A = AST_tuple_value(AST_prepend(REST, FIRST)); }
+tuple_value(A) ::= LEFT_PARENTHESIS COMMA RIGHT_PARENTHESIS. { A = AST_tuple_value(NULL); }
+
+%type subexpr { struct Script_AST * }
+subexpr(A) ::= LEFT_PARENTHESIS expr(B) RIGHT_PARENTHESIS. { A = B; }
+
+%type annotation { struct Script_AST * }
+annotation(A) ::= LEFT_PARENTHESIS expr(VALUE) COLON expr(TYPE) RIGHT_PARENTHESIS. { A = AST_annotation(VALUE, TYPE); }
+
+%type structure_type { struct Script_AST * }
+structure_type(A) ::= KEYWORD_STRUCT LEFT_CURLY_BRACKET simple_member_list(B) RIGHT_CURLY_BRACKET. { A = AST_structure_type(B); }
+
+%type structure_value { struct Script_AST * }
+structure_value(A) ::= LEFT_CURLY_BRACKET structure_init_list(B) structure_value_from(C) RIGHT_CURLY_BRACKET. { A = AST_structure_value(B, C); }
+
+%type structure_value_from { struct Script_AST * }
+structure_value_from(A) ::= KEYWORD_FROM expr(B). { A = B; }
+structure_value_from(A) ::= . { A = NULL; }
+
+%type structure_init_list { struct Script_AST * }
+structure_init_list(A) ::= structure_init_list(B) COMMA structure_init(C). { A = AST_append(B, C); }
+structure_init_list(A) ::=                              structure_init(C). { A = C; }
+structure_init_list(A) ::= . { A = NULL; }
+
+%type structure_init { struct Script_AST * }
+structure_init(A) ::= NAME(B) EQUAL_SIGN expr(C). { A = AST_binding(B.string, C); }
+
+%type enum_type { struct Script_AST * }
+enum_type(A) ::= KEYWORD_ENUM LEFT_CURLY_BRACKET simple_member_list(B) RIGHT_CURLY_BRACKET. { A = AST_enum_type(B); }
+
+%type enum_value { struct Script_AST * }
+enum_value(A) ::= NAME(B) LEFT_CURLY_BRACKET expr_list(C) RIGHT_CURLY_BRACKET. { A = AST_enum_value(B.string, C); }
+
+%type function_type { struct Script_AST * }
+function_type(A) ::= LEFT_CURLY_BRACKET function_type_argument_list(B) function_type_result(C) RIGHT_CURLY_BRACKET. { A = AST_function_type(B, C); }
+
+%type function_type_result { struct Script_AST * }
+function_type_result(A) ::= right_arrow expr(B). { A = B; }
+function_type_result(A) ::= . { A = NULL; }
+
+%type function_type_argument_list { struct Script_AST * }
+function_type_argument_list(A) ::= function_type_argument_list(B) COMMA function_type_argument(C). { A = AST_append(B, C); }
+function_type_argument_list(A) ::=                                      function_type_argument(C). { A = C; }
+
+%type function_type_argument { struct Script_AST * }
+function_type_argument(A) ::= NAME(B) COLON expr(C). { A = AST_binding(B.string, C); }
+
+%type function_value { struct Script_AST * }
+function_value(A) ::= LEFT_CURLY_BRACKET function_value_argument_list(B) right_arrow simple_statement_list(C) RIGHT_CURLY_BRACKET. { A = AST_function_value(B, C); }
+
+%type function_value_argument_list { struct Script_AST * }
+function_value_argument_list(A) ::= function_value_argument_list(B) COMMA function_value_argument(C). { A = AST_append(B, C); }
+function_value_argument_list(A) ::=                                       function_value_argument(C). { A = C; }
+
+%type function_value_argument { struct Script_AST * }
+function_value_argument(A) ::= NAME(B). { A = AST_name(B.string); }
+function_value_argument(A) ::= LOW_LINE. { A = NULL; }
+
