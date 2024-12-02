@@ -22,14 +22,7 @@ static inline void memory_grow(void **ptr, size_t element_size, size_t alignment
 #define memory_new(T) (T *)memory_alloc(sizeof(T), alignof(T))
 #define memory_del(PTR) memory_free(PTR, sizeof(*PTR), alignof(*PTR))
 
-bool memory_copy(void * dest, size_t dest_size, const void * src, size_t count);
-bool memory_set(void * dest, size_t dest_size, int ch, size_t count);
-
 void * memory_clone_length(const void * data, size_t data_size, size_t alignment);
-
-static inline void memory_clear(void * ptr, size_t size) {
-  memory_set(ptr, size, 0, size);
-}
 
 typedef enum memory_Format {
   memory_Format_Unknown,
@@ -93,5 +86,51 @@ void memory_SubBuffer_copy_from_SubBuffer(memory_SubBuffer *dst, const memory_Su
 
 int memory_SubBuffer_write(memory_SubBuffer *dst, uint32_t index, uint32_t count, memory_Format format, uint32_t src_stride, const void *src);
 int memory_SubBuffer_read(const memory_SubBuffer *src, uint32_t index, uint32_t count, memory_Format format, uint32_t dst_stride, void *dst);
+
+static inline bool memory_set(void *dest, size_t dest_size, int ch, size_t count) {
+#if defined(__STDC_LIB_EXT1__) && ALIAS_MEMORY_C11_CONSTRAINTS
+  extern int memset_s(void *, size_t, int, size_t);
+  return memset_s(dest, dest_size, ch, count) == 0;
+#else
+  extern void *memset(void *, int, size_t);
+  (void)dest_size;
+  memset(dest, ch, count);
+  return true;
+#endif
+}
+
+static inline bool memory_clear(void *dest, size_t dest_size) { return memory_set(dest, dest_size, 0, dest_size); }
+
+static inline bool memory_copy(void *dest, size_t dest_size, const void *src, size_t count) {
+#if defined(__STDC_LIB_EXT1__) && ALIAS_MEMORY_C11_CONSTRAINTS
+  extern int memcpy_s(void *, size_t, const void *, size_t);
+  return memcpy_s(dest, dest_size, src, count) == 0;
+#else
+  extern void *memcpy(void *, const void *, size_t);
+  (void)dest_size;
+  memcpy(dest, src, count);
+  return true;
+#endif
+}
+
+static inline bool memory_move(void *dest, size_t dest_size, const void *src, size_t count) {
+#if defined(__STDC_LIB_EXT1__) && ALIAS_MEMORY_C11_CONSTRAINTS
+  extern int memmove_s(void *, size_t, const void *, size_t);
+  return memmove_s(dest, dest_size, src, count) == 0;
+#else
+  extern void *memmove(void *, const void *, size_t);
+  (void)dest_size;
+  memmove(dest, src, count);
+  return true;
+#endif
+}
+
+static inline void *memory_clone(const void *src, size_t size, size_t alignment) {
+  void *ptr = memory_alloc(size, alignment);
+  if(ptr != NULL) {
+    memory_copy(ptr, size, src, size);
+  }
+  return ptr;
+}
 
 #endif

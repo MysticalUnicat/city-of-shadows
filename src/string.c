@@ -9,6 +9,8 @@
 // x 0 0 0 3
 // 0 0 0 0 4
 
+
+
 static inline uint32_t get_capacity(MStr m) {
   return *(((uint32_t *)m) - 1);
 }
@@ -66,6 +68,14 @@ int string_size_a(AStr c) {
   return c.length;
 }
 
+static AStr AStr_from_CStr(CStr c) {
+  return (AStr){.length = strlen(c), .base = c};
+}
+
+static AStr AStr_from_MStr(MStr m) {
+  return (AStr){.length = get_length(m), .base = m};
+}
+
 bool string_equals(CStr a, CStr b) {
   while(*a && *a == *b) {
     a++;
@@ -89,6 +99,25 @@ int string_compare_length(CStr a, CStr b, size_t length) {
     length--;
   }
   return length == 0 ? 0 : (int)*a - (int)*b;
+}
+
+bool string_endswith_aa(AStr a, AStr n) {
+  if(a.length < n.length) {
+    return false;
+  }
+  return string_compare_length(a.base + (a.length - n.length), n.base, n.length) == 0;
+}
+
+bool string_endswith_a(AStr a, CStr n) {
+  return string_endswith_aa(a, AStr_from_CStr(n));
+}
+
+bool string_endswith_m(MStr m, CStr n) {
+  return string_endswith_aa(AStr_from_MStr(m), AStr_from_CStr(n));
+}
+
+bool string_endswith_c(CStr c, CStr n) {
+  return string_endswith_aa(AStr_from_CStr(c), AStr_from_CStr(n));
 }
 
 CStr string_find(CStr s, int n) {

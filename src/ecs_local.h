@@ -50,6 +50,7 @@ typedef struct ecs_Archetype {
   uint32_t         any_cleanup : 1;
   uint32_t         _reserved : 30;
   Vector(uint32_t) free_codes;
+  uint32_t         * write;
   PagedSOA         paged_soa;
 } ecs_Archetype;
 
@@ -92,11 +93,13 @@ extern struct ecs_global_Archetype engine_ecs_archetype;
 extern struct ecs_global_Component  engine_ecs_component;
 
 struct ecs_Query {
+  ecs_ComponentSet write_component_set;
   ecs_ComponentSet component_set;
   uint32_t last_archetype_tested;
 
   ecs_ComponentSet require_component_set;
   ecs_ComponentSet exclude_component_set;
+  ecs_ComponentSet modified_component_set;
 
   uint32_t component_count;
 
@@ -107,9 +110,11 @@ struct ecs_Query {
 
   uint32_t archetype_capacity;
   uint32_t archetype_length;
-
   ecs_ArchetypeHandle * archetype;
 
+  uint32_t * write_index;
+  uint32_t * modified_index;
+  uint32_t * modified_last_seen_write;
   uint32_t * size_offset;
 };
 

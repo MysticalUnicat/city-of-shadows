@@ -1,4 +1,4 @@
- %include{
+%include{
 #include "../src/log.h"
 #include "../src/format.h"
 #include "../src/configuration.h"

@@ -5,6 +5,7 @@
 #include "math.h"
 #include "game_stat.h"
 #include "game_tables.h"
+#include "string.h"
 
 /* story: cut down a tree and build a fire for warmth
  *
@@ -249,6 +250,31 @@ ECS_DECLARE_COMPONENT(SocialSkill, {
   GameStatA  level;
   GameStatIA confidence;
   GameStat   xp;
+})
+
+struct SpawnData {
+  CStr name;
+  CStr description;
+  ecs_EntityHandle (*function)(pga2d_Point location);
+};
+
+struct SpawnDataReference {
+  struct SpawnData * spawn;
+  float count_min;
+  float count_max;
+  float radius_max;
+};
+
+struct HarvestableData {
+  struct SpawnDataReference common;
+  struct SpawnDataReference uncommon;
+  struct SpawnDataReference rare;
+  float rarity_multiplier;
+};
+
+ECS_DECLARE_COMPONENT(Harvestable, {
+  const struct HarvestableData * data;
+  uint32_t remaining;
 })
 
 #undef BODY_PART_STORAGE 

@@ -66,12 +66,16 @@ struct Reader * vfs_read(CStr path) {
   }
   switch(namespace) {
   case VFS_Namespacee_FILES:
-    return read_from_file(path);
+    {
+      MStr asset_path = format_alloc("assets/%s", path);
+      struct Reader * r = read_from_file(asset_path);
+      string_free(asset_path);
+      return r;
+    }
   case VFS_Namespacee_PACK:
     return vfs_read_from_pack(path);
   }
 }
-
 
 struct MPCK_Header {
   char prefix[4];

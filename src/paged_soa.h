@@ -104,6 +104,12 @@ static inline const void * PagedSOA_raw_read(const PagedSOA * soa, uint32_t page
   return soa->pages[page] + (offset + size * index);
 }
 
+static inline const void * PagedSOA_read_first(const PagedSOA * soa, uint32_t page, uint32_t column) {
+  uint32_t size, offset;
+  PagedSOA_decode_column(soa, column, &size, &offset);
+  return PagedSOA_raw_read(soa, page, 0, size, offset);
+}
+
 static inline const void * PagedSOA_read(const PagedSOA * soa, uint32_t code, uint32_t column) {
   uint32_t page, index, size, offset;
   PagedSOA_decode_code(soa, code, &page, &index);
@@ -113,6 +119,12 @@ static inline const void * PagedSOA_read(const PagedSOA * soa, uint32_t code, ui
 
 static inline void * PagedSOA_raw_write(PagedSOA * soa, uint32_t page, uint32_t index, uint32_t size, uint32_t offset) {
   return soa->pages[page] + (offset + size * index);
+}
+
+static inline void * PagedSOA_write_first(PagedSOA * soa, uint32_t page, uint32_t column) {
+  uint32_t size, offset;
+  PagedSOA_decode_column(soa, column, &size, &offset);
+  return PagedSOA_raw_write(soa, page, 0, size, offset);
 }
 
 static inline void * PagedSOA_write(PagedSOA * soa, uint32_t code, uint32_t column) {

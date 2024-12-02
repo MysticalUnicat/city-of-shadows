@@ -77,7 +77,7 @@ ecs_Result ecs_resolve_archetype(
     archetype->any_cleanup |= &engine_ecs_component.data[components.index[i]].cleanup != NULL;
   }
 
-  PagedSOA_initialize(&archetype->paged_soa, sizeof(uint32_t), 1 + components.count, sizes);
+  PagedSOA_initialize(&archetype->paged_soa, sizeof(uint32_t) * (1 + components.count), 1 + components.count, sizes);
 
   memory_free(sizes, sizeof(size_t) * (1 + components.count), alignof(*sizes));
 

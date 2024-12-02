@@ -2,48 +2,26 @@
 
 #include <stdlib.h>
 
-/* grid that is data is composed of hexagons
+/* This terrain implementation uses hexes, with of course a 2d array of data for the cells.
  * 
- *         +-------+
- *        /         \
- *       /           \
- *      +             +-------+
- *       \           /         \
- *        \         /           \
- *         +-------+             +
- *        /         \           /
- *       /           \         /
- *      +             +-------+
- *       \           /
- *        \         /
- *         +-------+
+ * each cell can represent unpassible mountains that need to be mined, properties of the dirt to change how it looks and behaves, water depth and moisture levels.
  *
- * each hexagon has:
- *   terrain type (various dirts, various clay, various soil, various stone)
- *   2-bits called variation, this is added in a way during rendering that allows variation in cells picked to render but be stable when there are changes
+ * it may be overkill but it fits in 32bits per hex cell and its easy to add/remove features i will need but this allows me to consider advanced features in the first pass to find future issues.
  *
- * when rendering, we decompose the terrain into equallateral triangles using the centerpoint of the hexagons as the vertexes.
- * 
- *         +-------+
- *        /         \
- *       /           \
- *      +      +      +-------+
- *       \     |     /         \
- *        \    |    /           \
- *         +---|---+      +      +
- *        /    |    \           /
- *       /     |     \         /
- *      +      +      +-------+
- *       \           /
- *        \         /
- *         +-------+
- * 
- * each rendering triangle gets a variation number as a sum of hexagons variation values
+ * anyway, lets get to some math with the hexagons used and which are used where...
  *
- * supporting any number of matching textures/features for that triangle.
+ * https://www.redblobgames.com/grids/hexagons/
  *
- * this is done with 4 textures, a mask (triangle) and three source textures (rectangle) to support any number of dirts, clays, soils, stones etc..
- * for example, if we choose to have 4 kinds (dirt, clay, water, stone), we would have 4**3 variation buckets (64)
+ * with an orientation of "flat-top" and an assumed size of 1, the height is sqrt(3) and the width is 2.
+ *
+ * the vertical spacing is sqrt(3) and the horizontal spacing is 3/2
+ *
+ * the coordinates is "odd-q" vertical layout.
+ *
+ * The way the terrain is rendered is not per hexagon, but the triangles between each 3 hexagon.
+ *
+ * So, the border hexes are partially rendered as well.
+ *
  */
 
 // features:
@@ -72,12 +50,13 @@ struct TerrainCell {
 
   uint32_t moisture     : 4;
 
-  // liquid kind (4 kinds, water, alchohol, blood, vomit)
-  uint32_t liquid_kind  : 2;
-
   // damange for rock face, depth for water depth of oceans and stuff
   uint32_t damage_depth : 6;
+
+  uint32_t unused : 2;
 };
+
+static_assert(sizeof(struct TerrainCell) == sizeof(uint32_t));
 
 ECS_DECLARE_COMPONENT(Terrain, {
   uint32_t width;
@@ -142,7 +121,6 @@ void Terrain_create(struct Terrain * terrain, uint32_t width, uint32_t height, i
       cells[y * width + x].silt = is_mountain ? 0 : silt_noise(wx, wy);
       cells[y * width + x].clay = is_mountain ? 0 : clay_noise(wx, wy);
       cells[y * width + x].moisture = is_mountain ? 0 : moisture_noise(wx, wy);
-      cells[y * width + x].liquid_kind = 0;
       cells[y * width + x].damage_depth = is_mountain ? 0 : water_noise(wx, wy);
     }
   }

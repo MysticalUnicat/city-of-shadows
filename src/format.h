@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stddef.h>
 
 typedef void (*format_Emit)(const uint8_t *ptr, size_t length, void *ud);
 

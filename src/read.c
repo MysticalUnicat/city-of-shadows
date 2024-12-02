@@ -66,6 +66,11 @@ size_t read_buffer(struct Reader * r, void * buffer, size_t size) {
   return do_read_synchronous(r, buffer, size);
 }
 
+int read_getc(struct Reader * r) {
+  char c = 0;
+  return do_read_synchronous(r, &c, 1) > 0 ? c : -1;
+}
+
 uint32_t read_uint32(struct Reader * r) {
   uint32_t value;
   do_read_synchronous(r, &value, sizeof(value));

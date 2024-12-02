@@ -13,9 +13,14 @@ rule re2c --command "re2c \$in -o \$out"
 
 rule lemon_re2c --implicit "\$builddir/lemon" --implicit "tool/lempar.c" --implicit "tool/grammar_prefix.y" --command "mkdir -p \$builddir/\$out; cat tool/grammar_prefix.y \$in > \$builddir/\$out/grammar.y; \$builddir/lemon \$builddir/\$out/grammar.y -Ttool/lempar.c -l -d\$builddir/\$out; re2c \$builddir/\$out/grammar.c -o \$out -f --storable-state"
 
+rule cpp --command "cpp \$in -P -o \$out"
+
+rule cat --command "cat \$in > \$out"
+
 # ---------------------------------------------------------------------------------------------------------------------
 
 build build/fileformat_configuration_parser.c lemon_re2c gen/fileformat_configuration_parser.c.re2c.lemon
+build build/fileformat_script_parser.c        lemon_re2c gen/fileformat_script_parser.c.re2c.lemon
 
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -40,14 +45,21 @@ phony geometric_algebra_headers \
   "\$builddir/include/generated/cga2d.h" \
   "\$builddir/include/generated/cga3d.h"
 
+per_platform library ___-mir \
+  --include-directory "third_party/mir" \
+  third_party/mir/mir.c \
+  third_party/mir/mir-gen.c
+
 per_platform executable ___-city_of_shadows \
   ___-libuv \
   ___-glfw3 \
+  ___-mir \
   --define "IMPLEMENTATION_LIBUV=1" \
-	--cflag -g \
-	--lflag -lm \
-	geometric_algebra_headers \
+  --cflag -g \
+  --lflag -lm \
+  geometric_algebra_headers \
   build/fileformat_configuration_parser.c \
+  build/fileformat_script_parser.c \
   src/camera.c \
   src/configuration.c \
   src/display.c \
@@ -66,6 +78,7 @@ per_platform executable ___-city_of_shadows \
   src/game.c \
   src/game_body_capacity.c \
   src/game_body_parts.c \
+  src/game_data.c \
   src/game_map.c \
   src/game_need.c \
   src/game_skill.c \
@@ -87,7 +100,8 @@ per_platform executable ___-city_of_shadows \
   src/transform.c \
   src/ui.c \
   src/vfs.c \
-  src/write.c
+  src/write.c \
+  src/script_ast_format.c
 
 # ---------------------------------------------------------------------------------------------------------------------
 

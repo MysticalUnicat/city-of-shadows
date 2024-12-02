@@ -1111,6 +1111,16 @@ struct Parse {
   struct yyParser lemon;
   bool is_finalized;
   bool invalid_lex;
+#if defined(NEWLINE)
+  uint32_t line;
+  uint32_t column;
+#endif
+#if defined(NEWLINE) && defined(INDENT) && defined(DEDENT)
+  bool had_newline;
+  uint32_t indent_level[256];
+  uint32_t indent_depth;
+  uint32_t whitespace_count;
+#endif
 };
 
 static int Parse_lex(struct Parse * parser) {
@@ -1138,11 +1148,19 @@ static int Parse_lex(struct Parse * parser) {
   */
 }
 
-void Parse_init(void * * _parser_ptr) {
+#if !defined(PARSER_EXTRA_ARGUMENT)
+#define PARSER_EXTRA_ARGUMENT
+#endif
+
+void Parse_init(void * * _parser_ptr PARSER_EXTRA_ARGUMENT) {
   *_parser_ptr = memory_alloc(sizeof(struct Parse), alignof(struct Parse));
   struct Parse * parser = *(struct Parse * *)_parser_ptr;
   memory_clear(parser, sizeof(*parser));
   yyParseInit(&parser->lemon);
+#if defined(PARSER_EXTRA_CONSTRUCTOR)
+  struct Extra * extra = &parser->extra;
+  PARSER_EXTRA_CONSTRUCTOR
+#endif
 }
 
 void Parse_add_buffer(void * _parser, const uint8_t * data, uint64_t size) {
@@ -1154,7 +1172,6 @@ void Parse_add_buffer(void * _parser, const uint8_t * data, uint64_t size) {
   }
   for(;;) {
     const uint8_t * base = parser->cursor;
-
     struct Token token;
     token.code = Parse_lex(parser);
     uint32_t length = (const uint8_t *)parser->cursor - (const uint8_t *)base;
@@ -1179,6 +1196,57 @@ void Parse_add_buffer(void * _parser, const uint8_t * data, uint64_t size) {
       parser->invalid_lex = true;
       break;
     }
+
+#if defined(NEWLINE)
+    token.line = parser->line;
+    token.column = parser->column;
+    const uint8_t * test = base;
+    while(test < parser->cursor) {
+      if(*test == '\n') {
+        parser->line += 1;
+        parser->column = 0;
+      }
+      parser->column += 1;
+      test += 1;
+    }
+#endif
+
+#if defined(NEWLINE) && defined(INDENT) && defined(DEDENT)
+    if(token.code == NEWLINE) {
+      parser->had_newline = true;
+      parser->whitespace_count = 0;
+      test = base;
+      while(test < parser->cursor) {
+        if(*test == '\n') {
+					parser->whitespace_count = 0;
+				}
+        if(*test == ' ') {
+					parser->whitespace_count += 1;
+				}
+        if(*test == '\t') {
+					parser->whitespace_count += 8;
+				}
+				test += 1;
+      }
+#if defined(COMMENT)
+    } else if(parser->had_newline && token.code == COMMENT) {
+      parser->had_newline = false;
+#endif
+    } else if(parser->had_newline) {
+      parser->had_newline = false;
+      if(parser->whitespace_count > parser->indent_level[parser->indent_depth]) {
+        parser->indent_depth += 1;
+        parser->indent_level[parser->indent_depth] = parser->whitespace_count;
+        yyParseNext(&parser->lemon, INDENT, token, &parser->extra);
+      } else if(parser->whitespace_count < parser->indent_level[parser->indent_depth]) {
+        while(parser->indent_depth > 0 && parser->whitespace_count < parser->indent_level[parser->indent_depth]) {
+          parser->indent_depth -= 1;
+          assert(parser->whitespace_count <= parser->indent_level[parser->indent_depth]); 
+          yyParseNext(&parser->lemon, DEDENT, token, &parser->extra);
+        }
+      }
+    }
+#endif
     yyParseNext(&parser->lemon, token.code, token, &parser->extra);
     if(token.code == END_OF_INPUT) {
       parser->is_finalized = true;
@@ -1187,10 +1255,10 @@ void Parse_add_buffer(void * _parser, const uint8_t * data, uint64_t size) {
   }
 }
 
-void Parse_finish(void * _parser) {
+void * Parse_finish(void * _parser) {
   struct Parse * parser = (struct Parse *)_parser;
   if(parser->is_finalized) {
-    return;
+    return NULL;
   }
   Parse_add_buffer(_parser, (uint8_t[]){0}, 1);
   yyParseFinalize(&parser->lemon);
@@ -1199,6 +1267,7 @@ void Parse_finish(void * _parser) {
   struct Extra * extra = &parser->extra;
   PARSER_EXTRA_DESTRUCTOR
 #endif
+  return NULL;
 }
 
 void Parse_free(void * _parser) {

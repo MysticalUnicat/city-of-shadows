@@ -76,6 +76,8 @@ int main(int argc, char * argv []) {
 
   display_initialize();
 
+  script_load("test.c");
+
   INFO(SOURCE_NAMESPACE, "initialization complete");
 
   // log_remove_callback(initialization_log_callback_index);

@@ -12,6 +12,8 @@ typedef struct {
   const char * base;
 } AStr;
 
+#define STRING_MK_GENERIC_1(PREFIX, A, ...) _Generic((A), MStr: PREFIX ## _m, AStr: PREFIX ## _a, default: PREFIX ## _c)(A, ## __VA_ARGS__)
+
 int string_size_m(MStr m);
 int string_size_c(CStr c);
 int string_size_a(AStr a);
@@ -23,6 +25,11 @@ int string_compare(CStr a, CStr b);
 int string_compare_length(CStr a, CStr b, size_t length);
 
 CStr string_find(CStr s, int n);
+
+bool string_endswith_m(MStr m, CStr n);
+bool string_endswith_c(CStr c, CStr n);
+bool string_endswith_a(AStr a, CStr n);
+#define string_endswith(s, n) STRING_MK_GENERIC_1(string_endswith, s, n)
 
 CStr string_find_reverse_m(MStr m, int n);
 CStr string_find_reverse_c(CStr c, int n);
